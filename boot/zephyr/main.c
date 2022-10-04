@@ -33,6 +33,7 @@
 #include "bootutil/bootutil.h"
 #include "bootutil/fault_injection_hardening.h"
 #include "flash_map_backend/flash_map_backend.h"
+#include "arch/arm/aarch32/cortex_m/cmsis.h"
 
 #ifdef CONFIG_MCUBOOT_SERIAL
 #include "boot_serial/boot_serial.h"
