@@ -2354,12 +2354,14 @@ context_boot_go(struct boot_loader_state *state, struct boot_rsp *rsp)
                             continue;
                         }
                     }
+#if defined(MCUBOOT_DIRECT_XIP)
                     /* Check if image has IMAGE_F_ROM_FIXED flag set and
                      * is in proper slot.
                      */
                     if (boot_rom_address_check(state, slot) != 0) {
                         continue;
                     }
+#endif
                     selected_slot = slot;
                     selected_image_header = hdr;
                 }
