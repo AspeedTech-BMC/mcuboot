@@ -164,6 +164,37 @@ struct arm_vector_table {
     uint32_t reset;
 };
 
+#ifdef CONFIG_SINGLE_APPLICATION_SLOT
+static void copy_image_to_sram(int slot, const struct image_header *br_hdr)
+{
+    const struct flash_area *fap;
+    int area_id;
+    int rc;
+    size_t img_size;
+
+    area_id = flash_area_id_from_image_slot(slot);
+    rc = flash_area_open(area_id, &fap);
+    if (rc != 0) {
+        BOOT_LOG_ERR("flash_area_open failed with %d\n", rc);
+        goto done;
+    }
+
+    img_size = br_hdr->ih_hdr_size + br_hdr->ih_img_size;
+
+    BOOT_LOG_INF("%s: load address: 0x%08x", __func__, br_hdr->ih_load_addr);
+    BOOT_LOG_INF("%s: load size: 0x%08x", __func__, img_size);
+
+    rc = flash_area_read(fap, 0, (void *)br_hdr->ih_load_addr, img_size);
+    if (rc != 0) {
+        BOOT_LOG_ERR("flash_area_read failed with %d\n", rc);
+        goto done;
+    }
+
+done:
+    flash_area_close(fap);
+}
+#endif
+
 extern void sys_clock_disable(void);
 
 static void do_boot(struct boot_rsp *rsp)
@@ -180,9 +211,24 @@ static void do_boot(struct boot_rsp *rsp)
     rc = flash_device_base(rsp->br_flash_dev_id, &flash_base);
     assert(rc == 0);
 
-    vt = (struct arm_vector_table *)(flash_base +
-                                     rsp->br_image_off +
-                                     rsp->br_hdr->ih_hdr_size);
+    if (rsp->br_hdr->ih_flags & IMAGE_F_RAM_LOAD) {
+        uint32_t offset;
+
+#ifdef CONFIG_SINGLE_APPLICATION_SLOT
+        copy_image_to_sram(0, rsp->br_hdr);
+#endif
+
+        offset = rsp->br_hdr->ih_load_addr + rsp->br_hdr->ih_hdr_size;
+        /*
+         * VTOR is aligned [1 << LOG2CEIL(4 * (16 + CONFIG_NUM_IRQS))]
+         * see zephyr/arch/arm/core/aarch32/vector_table.ld
+         */
+        vt = (struct arm_vector_table *)(((offset + 512) >> 10) << 10);
+    } else {
+        vt = (struct arm_vector_table *)(flash_base +
+                                         rsp->br_image_off +
+                                         rsp->br_hdr->ih_hdr_size);
+    }
 
     irq_lock();
 #ifdef CONFIG_SYS_CLOCK_EXISTS
