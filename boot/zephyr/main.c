@@ -35,6 +35,8 @@
 #include "flash_map_backend/flash_map_backend.h"
 #include "arch/arm/aarch32/cortex_m/cmsis.h"
 
+#include "dice.h"
+
 #ifdef CONFIG_MCUBOOT_SERIAL
 #include "boot_serial/boot_serial.h"
 #include "serial_adapter/serial_adapter.h"
@@ -568,12 +570,18 @@ void main(void)
     BOOT_LOG_INF("Bootloader chainload address offset: 0x%x",
                  rsp.br_image_off);
 
+    // TODO: Check the signed certificate, if not exist, produce CSR
+    if (dice_start(0, &rsp))
+        FIH_PANIC;
+
 #if defined(MCUBOOT_DIRECT_XIP)
     BOOT_LOG_INF("Jumping to the image slot");
 #else
     BOOT_LOG_INF("Jumping to the first image slot");
 #endif
     ZEPHYR_BOOT_LOG_STOP();
+
+
     do_boot(&rsp);
 
     BOOT_LOG_ERR("Never should get here");

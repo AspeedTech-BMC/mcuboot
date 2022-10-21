@@ -1,0 +1,84 @@
+
+config ASPEED_DICE_CERT_VALID_FROM
+	default "221010000000Z"
+	string "Aspeed DICE certificate validity, format : YYMMDDhhmmssZ"
+	help
+	  Certificate not valid before this date.
+
+config ASPEED_DICE_CERT_VALID_TO
+	default "421010000000Z"
+	string "Aspeed DICE certificate validity, format : YYMMDDhhmmssZ"
+	help
+	  Certificate not valid after this date.
+
+config ASPEED_DICE_CERT_DEVID_ISSUER_NAME
+	default "Aspeed PFR R00t"
+	string "Aspeed DICE devid certificate issuer name"
+	help
+	  Name of the certification authority which issued the device id certificate.
+
+config ASPEED_DICE_CERT_DEVID_ISSUER_ORG
+	default "AST_TW"
+	string "Aspeed DICE devid certificate issuer organization"
+	help
+	  Organization of the certification authority which issued the device id certificate.
+
+config ASPEED_DICE_CERT_DEVID_ISSUER_COUNTRY
+	default "TW"
+	string "Aspeed DICE devid certificate issuer country"
+	help
+	  Country of the certification authority which issued the device id certificate.
+
+config ASPEED_DICE_CERT_DEVID_SUBJECT_NAME
+	default "Aspeed PFR R00t"
+	string "Aspeed DICE device id certificate subject name"
+	help
+	  Subject common name of alias certificate.
+
+config ASPEED_DICE_CERT_DEVID_SUBJECT_ORG
+	default "AST_TW"
+	string "Aspeed DICE device id certificate subject organization"
+	help
+	  Subject organization of alias certificate.
+
+config ASPEED_DICE_CERT_DEVID_SUBJECT_COUNTRY
+	default "TW"
+	string "Aspeed DICE device id certificate subject country"
+	help
+	  Subject country of alias certificate.
+
+config ASPEED_DICE_CERT_ALIAS_ISSUER_NAME
+	default "Aspeed PFR Core"
+	string "Aspeed DICE alias certificate issuer name"
+	help
+	  Name of the certification authority which issued the alias certificate.
+
+config ASPEED_DICE_CERT_ALIAS_ISSUER_ORG
+	default "AST_TW"
+	string "Aspeed DICE alias certificate issuer organization"
+	help
+	  Organization of the certification authority which issued the alias certificate.
+
+config ASPEED_DICE_CERT_ALIAS_ISSUER_COUNTRY
+	default "TW"
+	string "Aspeed DICE alias certificate issuer country"
+	help
+	  Country of the certification authority which issued the alias certificate.
+
+config ASPEED_DICE_CERT_ALIAS_SUBJECT_NAME
+	default "Aspeed PFR Core"
+	string "Aspeed DICE alias certificate subject name"
+	help
+	  Subject common name of alias certificate.
+
+config ASPEED_DICE_CERT_ALIAS_SUBJECT_ORG
+	default "AST_TW"
+	string "Aspeed DICE alias certificate subject organization"
+	help
+	  Subject organization of alias certificate.
+
+config ASPEED_DICE_CERT_ALIAS_SUBJECT_COUNTRY
+	default "TW"
+	string "Aspeed DICE alias certificate subject country"
+	help
+	  Subject country of alias certificate.

@@ -33,4 +33,33 @@
 #error "Cannot configure mbedTLS; signature type is unknown."
 #endif
 
+
+#define MBEDTLS_X509_CREATE_C
+#define MBEDTLS_X509_CRT_WRITE_C
+#define MBEDTLS_X509_CSR_WRITE_C
+#define MBEDTLS_PEM_WRITE_C
+#define MBEDTLS_ECDSA_C
+#define MBEDTLS_ECP_DP_SECP384R1_ENABLED
+#define MBEDTLS_ECP_NIST_OPTIM
+#define MBEDTLS_ECP_C
+#define MBEDTLS_HMAC_DRBG_C
+#define MBEDTLS_PK_WRITE_C
+#define MBEDTLS_PEM_CERTIFICATE_FORMAT
+#define MBEDTLS_SHA512_C
+#define MBEDTLS_SHA384_C
+#define MBEDTLS_PK_C
+#define MBEDTLS_BASE64_C
+#define MBEDTLS_SHA1_C
+
+// Configs for reducing firmware image size
+#define MBEDTLS_ECP_FIXED_POINT_OPTIM 0
+#define MBEDTLS_SHA1_PROCESS_ALT
+#define MBEDTLS_SHA256_SMALLER
+#define MBEDTLS_SHA512_SMALLER
+
+// Using ASPEED crypto engine to replace mbedtls function
+#define MBEDTLS_SHA1_ALT
+//#define MBEDTLS_SHA256_ALT
+//#define MBEDTLS_SHA512_ALT
+
 #endif

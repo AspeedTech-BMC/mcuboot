@@ -656,3 +656,5 @@ config MCUBOOT_BOOTUTIL_LIB_OWN_LOG
 	default n
 
 source "Kconfig.zephyr"
+
+rsource "Kconfig.aspeed_dice"

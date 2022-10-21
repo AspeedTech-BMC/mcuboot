@@ -38,7 +38,7 @@
  * NOTE: RSA-3072 signing + RSA-2048-OAEP might require growing the size...
  */
 #if (CONFIG_BOOT_SIGNATURE_TYPE_RSA_LEN == 2048) && !defined(CONFIG_BOOT_ENCRYPT_RSA)
-#define CRYPTO_HEAP_SIZE 6144
+#define CRYPTO_HEAP_SIZE 6144 + 1024*4
 #else
 #  if !defined(MBEDTLS_RSA_NO_CRT)
 #  define CRYPTO_HEAP_SIZE 10240
