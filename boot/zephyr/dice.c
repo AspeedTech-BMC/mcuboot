@@ -46,6 +46,9 @@ MCUBOOT_LOG_MODULE_REGISTER(dice);
 #define RIOT_X509_SNUM_LEN                0x08    // In bytes
 
 #define CERT_INFO_MAGIC_NUM               0x43455254    // hex of 'CERT'
+#define DEVID_CERT_ADDR                   0
+#define ALIAS_CERT_ADDR                   0x2000
+#define CERT_REGION_SIZE                  0x2000
 
 #define BASE64_LEN(l) ((l == 0) ? (1) : (((((l - 1) / 3) + 1) * 4) + 1))
 
@@ -72,8 +75,8 @@ typedef struct {
 typedef struct {
 	uint32_t magic;
 	uint32_t length;
-	uint8_t hash[SHA256_HASH_LENGTH];
 	uint8_t data[0x1000];
+	uint8_t hash[SHA256_HASH_LENGTH];
 } PFR_CERT_INFO;
 
 typedef struct {
@@ -86,6 +89,12 @@ typedef struct {
 	uint8_t privkey[ECDSA384_PRIVATE_KEY_SIZE];
 	uint8_t pubkey[ECDSA384_PUBLIC_KEY_SIZE];
 } PFR_ALIAS_CERT_INFO;
+
+typedef enum {
+	CERT_INFO_VALID = 0,
+	CERT_INFO_EMPTY_MAGIC,
+	CERT_INFO_INVALID,
+} cert_status;
 
 enum cert_type {
 	CERT_TYPE = 0,
@@ -121,10 +130,8 @@ uint8_t alias_priv_key_buf[ECDSA384_PRIVATE_KEY_SIZE] = {0};
 uint8_t alias_pub_key_buf[ECDSA384_PUBLIC_KEY_SIZE] = {0};
 
 PFR_DEVID_CERT_INFO devid_cert_info __attribute__((aligned(16), section(".nocache.bss")));
-
-// Alias certificate and key pair will be stored in SRAM_CERT
-// Please refer to ast10x0 linker script and zephyr.map
-PFR_ALIAS_CERT_INFO alias_cert_info __attribute__((aligned(16), section(".nocache1.bss")));
+PFR_ALIAS_CERT_INFO alias_cert_info __attribute__((aligned(16), section(".nocache.bss")));
+PFR_ALIAS_CERT_INFO fl_alias_cert_info __attribute__((aligned(16), section(".nocache.bss")));
 
 #ifdef GEN_PEM_CERT
 uint8_t alias_cert_pem[DER_MAX_PEM] = {0};
@@ -978,7 +985,37 @@ void clear_global_sensitive_info(void)
 	memset(devid_pub_key_buf, 0, sizeof(devid_pub_key_buf));
 	memset(alias_priv_key_buf, 0, sizeof(alias_priv_key_buf));
 	memset(alias_pub_key_buf, 0, sizeof(alias_pub_key_buf));
+	memset(&alias_cert_info, 0, sizeof(alias_cert_info));
+	memset(&fl_alias_cert_info, 0, sizeof(fl_alias_cert_info));
 	memset(&devid_cert_info, 0, sizeof(devid_cert_info));
+}
+
+cert_status is_devid_certificate_valid(PFR_DEVID_CERT_INFO *cert_info, uint8_t *devid_pubkey)
+{
+	uint8_t hash_output[SHA256_HASH_LENGTH];
+
+	if (cert_info->cert.magic == 0xFFFFFFFF)
+		return CERT_INFO_EMPTY_MAGIC;
+
+	if (cert_info->cert.magic == CERT_INFO_MAGIC_NUM) {
+		if (memcmp(cert_info->pubkey, devid_pubkey, ECDSA384_PUBLIC_KEY_SIZE))
+			return CERT_INFO_INVALID;
+
+		mbedtls_sha256(cert_info->cert.data, cert_info->cert.length, hash_output, 0);
+		if (!memcmp(cert_info->cert.hash, hash_output, sizeof(hash_output)))
+			return CERT_INFO_VALID;
+	}
+
+	return CERT_INFO_INVALID;
+}
+
+void generate_certificate_info(PFR_CERT_INFO *cert_info, PFR_DER_CTX *der_ctx)
+{
+	cert_info->magic = CERT_INFO_MAGIC_NUM;
+	cert_info->length = der_ctx->position;
+	memset(cert_info->data, 0, sizeof(cert_info->data));
+	memcpy(cert_info->data, der_ctx->buffer, cert_info->length);
+	mbedtls_sha256(cert_info->data, cert_info->length, cert_info->hash, 0);
 }
 
 int dice_start(size_t cert_type, struct boot_rsp *rsp)
@@ -994,6 +1031,8 @@ int dice_start(size_t cert_type, struct boot_rsp *rsp)
 	PFR_ECC_SIG tbs_sig;
 
 	uint8_t der_buf[DER_MAX_TBS];
+	const struct flash_area *fap;
+	cert_status rc;
 
 	// Hash CDI
 	mbedtls_sha512((uint8_t *)CDI_ADDRESS, CDI_LENGTH, cdi_digest, 1 /* SHA-384 */);
@@ -1029,16 +1068,21 @@ int dice_start(size_t cert_type, struct boot_rsp *rsp)
 	mbedtls_mpi_init(&tbs_sig.r);
 	mbedtls_mpi_init(&tbs_sig.s);
 	CHK(x509_cert_sign(&tbs_sig, der_ctx.buffer, der_ctx.position, &ctx_devid));
-
 	CHK(x509_gen_cert(&der_ctx, &tbs_sig));
-	alias_cert_info.cert.magic = CERT_INFO_MAGIC_NUM;
-	alias_cert_info.cert.length = der_ctx.position;
-	memset(alias_cert_info.cert.data, 0, sizeof(alias_cert_info.cert.data));
-	memcpy(alias_cert_info.cert.data, der_ctx.buffer, alias_cert_info.cert.length);
-	mbedtls_sha256(alias_cert_info.cert.data, alias_cert_info.cert.length,
-			alias_cert_info.cert.hash, 0);
+
+	generate_certificate_info(&alias_cert_info.cert, &der_ctx);
 	memcpy(alias_cert_info.privkey, alias_priv_key_buf, sizeof(alias_cert_info.privkey));
 	memcpy(alias_cert_info.pubkey, alias_pub_key_buf, sizeof(alias_cert_info.pubkey));
+
+	// Read alias certificate from flash and compare with generated alias certificate
+	CHK(flash_area_open(FLASH_AREA_ID(certificate), &fap));
+	flash_area_read(fap, ALIAS_CERT_ADDR, &fl_alias_cert_info, sizeof(fl_alias_cert_info));
+	if (memcmp(&alias_cert_info, &fl_alias_cert_info, sizeof(alias_cert_info))) {
+		BOOT_LOG_INF("Generate Alias certificate");
+		flash_area_erase(fap, ALIAS_CERT_ADDR, CERT_REGION_SIZE);
+		flash_area_write(fap, ALIAS_CERT_ADDR, &alias_cert_info, sizeof(alias_cert_info));
+	}
+	flash_area_close(fap);
 
 #ifdef GEN_PEM_CERT
 	uint32_t len = sizeof(alias_cert_pem);
@@ -1047,25 +1091,20 @@ int dice_start(size_t cert_type, struct boot_rsp *rsp)
 	//LOG_HEXDUMP_INF(der_ctx.buffer, der_ctx.position, "Alias Cert DER :");
 	//LOG_HEXDUMP_INF(alias_cert_pem, sizeof(alias_cert_pem), "Alias Cert PEM :");
 
-	const struct flash_area *fap;
-	uint8_t hash_output[SHA256_HASH_LENGTH];
-
 	CHK(flash_area_open(FLASH_AREA_ID(certificate), &fap));
-	flash_area_read(fap, 0, &devid_cert_info, sizeof(devid_cert_info));
-	if (devid_cert_info.cert.magic == CERT_INFO_MAGIC_NUM) {
-		if (memcmp(devid_cert_info.pubkey, devid_pub_key_buf, sizeof(devid_pub_key_buf))) {
-			BOOT_LOG_ERR("Layer 0 firmware is tampered");
-			goto error;
-		}
-
-		mbedtls_sha256(devid_cert_info.cert.data, devid_cert_info.cert.length,
-				hash_output, 0);
-
-		// Device ID certificate is generated, bypass certificate generation.
-		if (!memcmp(devid_cert_info.cert.hash, hash_output, sizeof(hash_output))) {
-			BOOT_LOG_INF("Device ID certificate was generated");
-			goto done;
-		}
+	flash_area_read(fap, DEVID_CERT_ADDR, &devid_cert_info, sizeof(devid_cert_info));
+	rc = is_devid_certificate_valid(&devid_cert_info, devid_pub_key_buf);
+	switch (rc) {
+	case CERT_INFO_INVALID:
+		BOOT_LOG_INF("layer 0 firmware is tampered");
+		goto error;
+	case CERT_INFO_VALID:
+		BOOT_LOG_INF("Device ID certificate was generated and is valid");
+		goto done;
+	case CERT_INFO_EMPTY_MAGIC:
+	default:
+		BOOT_LOG_INF("Generate Device ID certificate");
+		break;
 	}
 
 	if(cert_type) {
@@ -1094,15 +1133,11 @@ int dice_start(size_t cert_type, struct boot_rsp *rsp)
 		//LOG_HEXDUMP_INF(devid_cert_pem, sizeof(devid_cert_pem), "DevID CSR PEM :");
 	}
 
-	devid_cert_info.cert.magic = CERT_INFO_MAGIC_NUM;
-	devid_cert_info.cert.length = der_ctx.position;
-	memset(devid_cert_info.cert.data, 0, sizeof(devid_cert_info.cert.data));
-	memcpy(devid_cert_info.cert.data, der_ctx.buffer, devid_cert_info.cert.length);
-	mbedtls_sha256(devid_cert_info.cert.data, devid_cert_info.cert.length,
-			devid_cert_info.cert.hash, 0);
+	generate_certificate_info(&devid_cert_info.cert, &der_ctx);
 	memcpy(devid_cert_info.pubkey, devid_pub_key_buf, sizeof(devid_pub_key_buf));
-	flash_area_erase(fap, 0, fap->fa_size);
-	flash_area_write(fap, 0, &devid_cert_info, sizeof(devid_cert_info));
+	flash_area_erase(fap, DEVID_CERT_ADDR, CERT_REGION_SIZE);
+	flash_area_write(fap, DEVID_CERT_ADDR, &devid_cert_info, sizeof(devid_cert_info));
+	flash_area_close(fap);
 	//LOG_HEXDUMP_INF(devid_priv_key_buf, sizeof(devid_priv_key_buf), "devid priv key :");
 	//LOG_HEXDUMP_INF(devid_pub_key_buf, sizeof(devid_pub_key_buf), "devid pub key :");
 	//LOG_HEXDUMP_INF(alias_priv_key_buf, sizeof(alias_priv_key_buf), "alias priv key :");
@@ -1118,7 +1153,6 @@ done:
 	return 0;
 error:
 	clear_global_sensitive_info();
-	memset(&alias_cert_info, 0, sizeof(alias_cert_info));
 	mbedtls_ecdsa_free(&ctx_devid);
 	mbedtls_ecdsa_free(&ctx_alias);
 	memset(&der_ctx, 0, sizeof(der_ctx));
