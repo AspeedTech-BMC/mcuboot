@@ -49,6 +49,12 @@
 #include "bootutil/enc_key.h"
 #endif
 
+#if defined(CONFIG_SOC_AST1060)
+#include <drivers/flash.h>
+#include <sys/reboot.h>
+#include "dice.h"
+#endif
+
 #include "mcuboot_config/mcuboot_config.h"
 
 MCUBOOT_LOG_MODULE_DECLARE(mcuboot);
@@ -59,6 +65,11 @@ static struct boot_loader_state boot_data;
 #define IMAGES_ITER(x) for ((x) = 0; (x) < BOOT_IMAGE_NUMBER; ++(x))
 #else
 #define IMAGES_ITER(x)
+#endif
+
+#if defined(CONFIG_SOC_AST1060)
+extern void sys_arch_reboot(int type);
+extern uint8_t flash_buf[PAGE_SIZE] __attribute__((aligned(16), section(".nocache.bss")));
 #endif
 
 /*
@@ -2289,6 +2300,107 @@ boot_remove_image_from_sram(uint32_t img_dst, uint32_t img_sz)
 }
 #endif /* MCUBOOT_RAM_LOAD */
 
+#if defined(CONFIG_SOC_AST1060)
+fih_int
+context_boot_go(struct boot_loader_state *state, struct boot_rsp *rsp)
+{
+    struct image_header *hdr = NULL;
+    uint32_t slot;
+    int fa_id;
+    int rc;
+    uint32_t img_dst;
+    uint32_t img_sz;
+    uint32_t img_loaded = 0;
+    fih_int fih_rc = FIH_FAILURE;
+
+    memset(state, 0, sizeof(struct boot_loader_state));
+
+    /* Open primary and secondary image areas for the duration
+     * of this call.
+     */
+    for (slot = 0; slot < BOOT_NUM_SLOTS; slot++) {
+        fa_id = flash_area_id_from_image_slot(slot);
+        rc = flash_area_open(fa_id, &BOOT_IMG_AREA(state, slot));
+        assert(rc == 0);
+    }
+
+    // Validate 1st slot firmware image
+    hdr = boot_img_hdr(state, BOOT_PRIMARY_SLOT);
+    rc = boot_read_image_header(state, BOOT_PRIMARY_SLOT, hdr, NULL);
+    if (rc == 0 && boot_is_header_valid(hdr, BOOT_IMG_AREA(state, BOOT_PRIMARY_SLOT))) {
+        rc = boot_load_image_to_sram(state, BOOT_PRIMARY_SLOT, hdr, &img_dst, &img_sz);
+        if (rc == 0) {
+            img_loaded = 1;
+            FIH_CALL(boot_validate_slot, fih_rc, state, BOOT_PRIMARY_SLOT, NULL);
+            if (fih_eq(fih_rc, FIH_SUCCESS)) {
+                rsp->br_flash_dev_id =
+                    BOOT_IMG_AREA(state, BOOT_PRIMARY_SLOT)->fa_device_id;
+                rsp->br_image_off = boot_img_slot_off(state, BOOT_PRIMARY_SLOT);
+                rsp->br_hdr = hdr;
+                // 1st slot firmware is valid
+                goto out;
+            }
+        }
+    }
+
+    if (img_loaded)
+        boot_remove_image_from_sram(img_dst, img_sz);
+
+    // Recovery process
+    // The 1st slot firmware image is invalid, validate the 2nd slot firmware image
+    BOOT_LOG_INF("Primary firmware image is invalid, verifying secondary firmware...")
+    hdr = boot_img_hdr(state, BOOT_SECONDARY_SLOT);
+    rc = boot_read_image_header(state, BOOT_SECONDARY_SLOT, hdr, NULL);
+    if (rc || !boot_is_header_valid(hdr, BOOT_IMG_AREA(state, BOOT_SECONDARY_SLOT))) {
+        // The 2nd image is not found, lockdown
+        BOOT_LOG_ERR("Second slot image is not found");
+        rc = -1;
+        goto out;
+    }
+
+    rc = boot_load_image_to_sram(state, BOOT_SECONDARY_SLOT, hdr, &img_dst, &img_sz);
+    if (rc != 0) {
+        // Failed to load the 2nd slot firmware for validation, lockdown
+        BOOT_LOG_ERR("Second slot image is invalid");
+        goto out;
+    }
+
+    FIH_CALL(boot_validate_slot, fih_rc, state, BOOT_SECONDARY_SLOT, NULL);
+    if (fih_eq(fih_rc, FIH_SUCCESS)) {
+        const struct flash_area *fap1 = BOOT_IMG_AREA(state, BOOT_PRIMARY_SLOT);
+        const struct flash_area *fap2 = BOOT_IMG_AREA(state, BOOT_SECONDARY_SLOT);
+        uint32_t offset = 0;
+
+        BOOT_LOG_INF("Recoverying...");
+        int64_t timestamp = k_uptime_get();
+        // recovery and SOC reset
+        flash_area_erase(fap1, 0, fap1->fa_size);
+        for (int i = 0; i < (fap1->fa_size / PAGE_SIZE); i++) {
+            flash_area_read(fap2, offset, flash_buf, PAGE_SIZE);
+            flash_area_write(fap1, offset, flash_buf, PAGE_SIZE);
+            offset += PAGE_SIZE;
+        }
+        int64_t timestamp1 = k_uptime_get() - timestamp;
+        BOOT_LOG_INF("Recovery done, elapsed time: %lld ms", timestamp1);
+        BOOT_LOG_INF("Rebooting...");
+        sys_arch_reboot(SYS_REBOOT_COLD);
+    } else {
+        BOOT_LOG_ERR("Recovery failed");
+    }
+
+out:
+    for (slot = 0; slot < BOOT_NUM_SLOTS; slot++) {
+        flash_area_close(BOOT_IMG_AREA(state, BOOT_NUM_SLOTS - 1 - slot));
+    }
+
+    if (rc) {
+        fih_rc = fih_int_encode(rc);
+    }
+
+    FIH_RET(fih_rc);
+}
+
+#else
 fih_int
 context_boot_go(struct boot_loader_state *state, struct boot_rsp *rsp)
 {
@@ -2492,6 +2604,7 @@ out:
 
    FIH_RET(fih_rc);
 }
+#endif /* !CONFIG_SOC_AST1060 */
 #endif /* MCUBOOT_DIRECT_XIP || MCUBOOT_RAM_LOAD */
 
 /**

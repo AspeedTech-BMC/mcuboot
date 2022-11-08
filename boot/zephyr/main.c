@@ -570,9 +570,11 @@ void main(void)
     BOOT_LOG_INF("Bootloader chainload address offset: 0x%x",
                  rsp.br_image_off);
 
-    // TODO: Check the signed certificate, if not exist, produce CSR
-    if (dice_start(0, &rsp))
-        FIH_PANIC;
+    // TODO: Check whether secureboot is enabled?
+    // if (secureboot_en) {
+        if (dice_start(0, &rsp))
+            FIH_PANIC;
+    // }
 
 #if defined(MCUBOOT_DIRECT_XIP)
     BOOT_LOG_INF("Jumping to the image slot");

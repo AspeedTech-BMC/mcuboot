@@ -19,6 +19,7 @@
 #include "bootutil/image.h"
 #include "bootutil/bootutil.h"
 #include "bootutil/bootutil_log.h"
+#include "dice.h"
 
 MCUBOOT_LOG_MODULE_REGISTER(dice);
 
@@ -27,7 +28,6 @@ MCUBOOT_LOG_MODULE_REGISTER(dice);
 #define CHECK_SPACE(_X)      if((_X->length-_X->position)<32)        {goto error;}
 #define CHECK_SPACE2(_X, _N) if(((_X->length-_X->position)+(_N))<32) {goto error;}
 
-#define PAGE_SIZE                         4 * 1024
 #define CDI_LENGTH                        64
 #define CDI_ADDRESS                       0x79001800
 #define SHA1_HASH_LENGTH                  20
@@ -104,7 +104,7 @@ enum cert_type {
 	LAST_CERT_TYPE
 };
 
-uint8_t flash_buf[PAGE_SIZE] __aligned(16);
+uint8_t flash_buf[PAGE_SIZE] __attribute__((aligned(16), section(".nocache.bss")));
 
 // OIDs
 static int oid_ecdsa_with_sha384[] = { 1,2,840,10045,4,3,3,-1 };

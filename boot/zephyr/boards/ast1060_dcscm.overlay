@@ -65,3 +65,11 @@
 	 */
 	reg = <0 DT_SIZE_K(192)>, <0xA0000 DT_SIZE_K(128)>;
 };
+
+&wdt0 {
+    status = "okay";
+};
+
+&wdt1 {
+    status = "okay";
+};
