@@ -2348,7 +2348,7 @@ context_boot_go(struct boot_loader_state *state, struct boot_rsp *rsp)
 
     // Recovery process
     // The 1st slot firmware image is invalid, validate the 2nd slot firmware image
-    BOOT_LOG_INF("Primary firmware image is invalid, verifying secondary firmware...")
+    BOOT_LOG_INF("Primary firmware image is invalid, verifying secondary firmware...");
     hdr = boot_img_hdr(state, BOOT_SECONDARY_SLOT);
     rc = boot_read_image_header(state, BOOT_SECONDARY_SLOT, hdr, NULL);
     if (rc || !boot_is_header_valid(hdr, BOOT_IMG_AREA(state, BOOT_SECONDARY_SLOT))) {
