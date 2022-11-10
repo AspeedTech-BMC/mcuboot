@@ -217,6 +217,17 @@ bootutil_find_key(uint8_t *keyhash, uint8_t keyhash_len)
         bootutil_sha256_finish(&sha256_ctx, hash);
         if (!memcmp(hash, keyhash, keyhash_len)) {
             bootutil_sha256_drop(&sha256_ctx);
+#if defined(CONFIG_SOC_AST1060)
+            // TODO: Read key retirement bit from OTP for
+            // checking whether the key is retired.
+
+            //#define KEY_RETIREMENT_ADDR    0x56
+            //#define KEY_RETIREMENT_MASK    0x1
+            //uint32_t buf, len;
+            //aspeed_otp_read_data(KEY_RETIREMENT_ADDR + i, &buf, 1);
+            //if (buf & KEY_RETIREMENT_MASK)
+            //    return -1;
+#endif
             return i;
         }
     }

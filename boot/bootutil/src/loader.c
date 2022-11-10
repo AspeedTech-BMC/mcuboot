@@ -2386,6 +2386,7 @@ context_boot_go(struct boot_loader_state *state, struct boot_rsp *rsp)
         sys_arch_reboot(SYS_REBOOT_COLD);
     } else {
         BOOT_LOG_ERR("Recovery failed");
+        boot_remove_image_from_sram(img_dst, img_sz);
     }
 
 out:

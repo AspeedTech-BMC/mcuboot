@@ -28,6 +28,10 @@
  */
 #include <mcuboot_config/mcuboot_config.h>
 
+#if defined(CONFIG_SOC_AST1060)
+#include "image_sign_pub.c.import"
+#endif
+
 #if !defined(MCUBOOT_HW_KEY)
 #if defined(MCUBOOT_SIGN_RSA)
 #define HAVE_KEYS
@@ -49,6 +53,28 @@ extern unsigned int ed25519_pub_key_len;
  *       provided and added to the build manually.
  */
 #if defined(HAVE_KEYS)
+#if defined(CONFIG_SOC_AST1060)
+const struct bootutil_key bootutil_keys[2] = {
+    {
+#if defined(MCUBOOT_SIGN_RSA)
+        .key = rsa_pub_key,
+        .len = &rsa_pub_key_len,
+#elif defined(MCUBOOT_SIGN_EC256)
+        .key = ecdsa_pub_key,
+        .len = &ecdsa_pub_key_len,
+#elif defined(MCUBOOT_SIGN_ED25519)
+        .key = ed25519_pub_key,
+        .len = &ed25519_pub_key_len,
+#endif
+    },
+    /* Customer's public key */
+    {
+        .key = image_sign_pub_der,
+        .len = &image_sign_pub_der_len,
+    },
+};
+const int bootutil_key_cnt = 2;
+#else
 const struct bootutil_key bootutil_keys[] = {
     {
 #if defined(MCUBOOT_SIGN_RSA)
@@ -64,6 +90,7 @@ const struct bootutil_key bootutil_keys[] = {
     },
 };
 const int bootutil_key_cnt = 1;
+#endif /* !CONFIG_SOC_AST1060 */
 #endif /* HAVE_KEYS */
 #else
 unsigned int pub_key_len;
