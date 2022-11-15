@@ -82,6 +82,7 @@ typedef struct {
 typedef struct {
 	PFR_CERT_INFO cert;
 	uint8_t pubkey[ECDSA384_PUBLIC_KEY_SIZE];
+	uint8_t cert_type;
 } PFR_DEVID_CERT_INFO;
 
 typedef struct {
@@ -1117,6 +1118,7 @@ int dice_start(size_t cert_type, struct boot_rsp *rsp)
 		len = sizeof(devid_cert_pem);
 		CHK(x509_der_to_pem(&der_ctx, CERT_TYPE, devid_cert_pem, &len));
 #endif
+		devid_cert_info.cert_type = CERT_TYPE;
 		//LOG_HEXDUMP_INF(der_ctx.buffer, der_ctx.position, "DevID Cert DER :");
 		//LOG_HEXDUMP_INF(devid_cert_pem, sizeof(devid_cert_pem), "DevID Cert PEM :");
 	} else {
@@ -1129,6 +1131,7 @@ int dice_start(size_t cert_type, struct boot_rsp *rsp)
 		len = sizeof(devid_cert_pem);
 		CHK(x509_der_to_pem(&der_ctx, CERT_REQ_TYPE, devid_cert_pem, &len));
 #endif
+		devid_cert_info.cert_type = CERT_REQ_TYPE;
 		//LOG_HEXDUMP_INF(der_ctx.buffer, der_ctx.position, "DevID CSR DER :");
 		//LOG_HEXDUMP_INF(devid_cert_pem, sizeof(devid_cert_pem), "DevID CSR PEM :");
 	}
