@@ -939,7 +939,7 @@ int x509_cert_sign(PFR_ECC_SIG *sig, void *data, uint32_t size, mbedtls_ecdsa_co
 {
 	uint8_t digest[SHA384_HASH_LENGTH];
 
-	mbedtls_sha512(data, SHA384_HASH_LENGTH, digest, 1 /* SHA-384 */);
+	mbedtls_sha512(data, size, digest, 1 /* SHA-384 */);
 
 	return (x509_digest_sign(sig, digest, sizeof(digest), ctx));
 }
