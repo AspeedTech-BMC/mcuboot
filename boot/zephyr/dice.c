@@ -869,7 +869,7 @@ int get_rand_bytes_by_cdi_fwid(void *rngState, uint8_t *output, size_t length)
 
 int seed_drbg(int (*f_entropy)(void *, unsigned char *, size_t), void *p_entropy)
 {
-	mbedtls_md_info_t *md_sha384;
+	const mbedtls_md_info_t *md_sha384;
 	int ret = -1;
 
 	if (hmac_drbg_ctx.MBEDTLS_PRIVATE(entropy_len))

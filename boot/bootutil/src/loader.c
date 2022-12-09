@@ -2301,6 +2301,9 @@ boot_remove_image_from_sram(uint32_t img_dst, uint32_t img_sz)
 #endif /* MCUBOOT_RAM_LOAD */
 
 #if defined(CONFIG_SOC_AST1060)
+#include <soc.h>
+#include "bootutil/otp.h"
+
 fih_int
 context_boot_go(struct boot_loader_state *state, struct boot_rsp *rsp)
 {
@@ -2337,7 +2340,43 @@ context_boot_go(struct boot_loader_state *state, struct boot_rsp *rsp)
                     BOOT_IMG_AREA(state, BOOT_PRIMARY_SLOT)->fa_device_id;
                 rsp->br_image_off = boot_img_slot_off(state, BOOT_PRIMARY_SLOT);
                 rsp->br_hdr = hdr;
+#if defined (CONFIG_OTP_SIM)
                 // 1st slot firmware is valid
+                // Check whether the current firmware is signed by customer's key
+                const struct device *flash_dev = NULL;
+                uint32_t key_retirement;
+                int key_id = get_dev_fw_key_id();
+                flash_dev = device_get_binding(FLASH_OTP_DEV);
+
+                if (key_id > 0) {
+                    // 1st slot firmware uses customer's public key
+                    // Check whether aspeed public key is retired
+                    flash_read(flash_dev, FLASH_OTP_KEY_RETIREMENT_ADDR, &key_retirement,
+                            sizeof(key_retirement));
+                    if (key_retirement & BIT(0)) {
+                        // Retire aspeed public key
+                        key_retirement &= ~BIT(0);
+                        flash_write(flash_dev, FLASH_OTP_KEY_RETIREMENT_ADDR, &key_retirement,
+                                sizeof(key_retirement));
+                    }
+                }
+#else
+                // 1st slot firmware is valid
+                // Check whether the current firmware is signed by customer's key
+                uint32_t key_retirement;
+                int key_id = get_dev_fw_key_id();
+
+                if (key_id > 0) {
+                    // 1st slot firmware uses customer's public key
+                    // Check whether aspeed public key is retired
+                    aspeed_otp_read_data(KEY_RETIREMENT_DW_ADDR, &key_retirement, 1);
+                    if (!(key_retirement & BIT(0))) {
+                        // Retire aspeed public key
+                        key_retirement |= BIT(0);
+                        aspeed_otp_prog_data(KEY_RETIREMENT_DW_ADDR, &key_retirement, 1);
+                    }
+                }
+#endif
                 goto out;
             }
         }

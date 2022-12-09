@@ -36,6 +36,7 @@
 #include "arch/arm/aarch32/cortex_m/cmsis.h"
 
 #include "dice.h"
+#include "bootutil/otp.h"
 
 #ifdef CONFIG_MCUBOOT_SERIAL
 #include "boot_serial/boot_serial.h"
@@ -289,7 +290,7 @@ static void do_boot(struct boot_rsp *rsp)
 }
 
 #elif defined(CONFIG_XTENSA)
-#define SRAM_BASE_ADDRESS	0xBE030000
+#define SRAM_BASE_ADDRESS   0xBE030000
 
 static void copy_img_to_SRAM(int slot, unsigned int hdr_offset)
 {
@@ -475,6 +476,31 @@ static bool detect_pin(const char* port, int pin, uint32_t expected, int delay)
 }
 #endif
 
+#if defined(CONFIG_SOC_AST1060)
+#define SEC_BASE                        0x7e6f2000
+#define SEC_STATUS_ADDR                 (SEC_BASE + 0x14)
+#define SEC_STATUS_SECUREBOOT_EN        BIT(6)
+
+bool is_secureboot_en(void)
+{
+#if defined (CONFIG_OTP_SIM)
+    const struct device *flash_dev = NULL;
+    uint8_t secureboot_en;
+    // In OTP simmulation partition
+    // OTPCFG start addr is 0xfe000 in fmc_cs0
+    flash_dev = device_get_binding(FLASH_OTP_DEV);
+    flash_read(flash_dev, FLASH_OTP_CONF_BASE, &secureboot_en, 1);
+
+    return (secureboot_en & BIT(1)) ? false : true;
+#else
+    // SEC14
+    uint32_t reg = sys_read32(SEC_STATUS_ADDR);
+
+    return (reg & SEC_STATUS_SECUREBOOT_EN);
+#endif
+}
+#endif
+
 void main(void)
 {
     struct boot_rsp rsp;
@@ -503,7 +529,7 @@ void main(void)
 #if (!defined(CONFIG_XTENSA) && defined(DT_CHOSEN_ZEPHYR_FLASH_CONTROLLER_LABEL))
     if (!flash_device_get_binding(DT_CHOSEN_ZEPHYR_FLASH_CONTROLLER_LABEL)) {
         BOOT_LOG_ERR("Flash device %s not found",
-		     DT_CHOSEN_ZEPHYR_FLASH_CONTROLLER_LABEL);
+             DT_CHOSEN_ZEPHYR_FLASH_CONTROLLER_LABEL);
         while (1)
             ;
     }
@@ -570,11 +596,17 @@ void main(void)
     BOOT_LOG_INF("Bootloader chainload address offset: 0x%x",
                  rsp.br_image_off);
 
+#if defined(CONFIG_SOC_AST1060)
     // TODO: Check whether secureboot is enabled?
-    // if (secureboot_en) {
+    if (is_secureboot_en()) {
+        BOOT_LOG_INF("Secure boot is enabled, DICE process start");
+
         if (dice_start(0, &rsp))
             FIH_PANIC;
-    // }
+    } else {
+        BOOT_LOG_INF("Secure boot is not enabled, bypass DICE process");
+    }
+#endif
 
 #if defined(MCUBOOT_DIRECT_XIP)
     BOOT_LOG_INF("Jumping to the image slot");

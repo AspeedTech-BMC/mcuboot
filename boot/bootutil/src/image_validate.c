@@ -29,6 +29,7 @@
 #include <stdint.h>
 #include <inttypes.h>
 #include <string.h>
+#include <drivers/flash.h>
 
 #include <flash_map_backend/flash_map_backend.h>
 
@@ -198,6 +199,24 @@ bootutil_img_hash(struct enc_key_data *enc_state, int image_index,
 
 #ifdef EXPECTED_SIG_TLV
 #if !defined(MCUBOOT_HW_KEY)
+
+#if defined(CONFIG_SOC_AST1060)
+#include <soc.h>
+#include "bootutil/otp.h"
+
+int dev_fw_key_id;
+
+void set_dev_fw_key_id(int key_id)
+{
+    dev_fw_key_id = key_id;
+}
+
+int get_dev_fw_key_id(void)
+{
+    return dev_fw_key_id;
+}
+#endif
+
 static int
 bootutil_find_key(uint8_t *keyhash, uint8_t keyhash_len)
 {
@@ -218,16 +237,26 @@ bootutil_find_key(uint8_t *keyhash, uint8_t keyhash_len)
         if (!memcmp(hash, keyhash, keyhash_len)) {
             bootutil_sha256_drop(&sha256_ctx);
 #if defined(CONFIG_SOC_AST1060)
-            // TODO: Read key retirement bit from OTP for
-            // checking whether the key is retired.
-
-            //#define KEY_RETIREMENT_ADDR    0x56
-            //#define KEY_RETIREMENT_MASK    0x1
-            //uint32_t buf, len;
-            //aspeed_otp_read_data(KEY_RETIREMENT_ADDR + i, &buf, 1);
-            //if (buf & KEY_RETIREMENT_MASK)
-            //    return -1;
-#endif
+#if defined(CONFIG_OTP_SIM)
+            uint32_t buf;
+            const struct device *flash_dev = NULL;
+            flash_dev = device_get_binding(FLASH_OTP_DEV);
+            flash_read(flash_dev, FLASH_OTP_KEY_RETIREMENT_ADDR, &buf, 4);
+            if (~buf & BIT(i)) {
+                // key is retired
+                return -1;
+            }
+            set_dev_fw_key_id(i);
+#else
+            uint32_t buf;
+            aspeed_otp_read_data(KEY_RETIREMENT_DW_ADDR, &buf, 1);
+            if (buf & BIT(i)) {
+                // key is retired
+                return -1;
+            }
+            set_dev_fw_key_id(i);
+#endif  /* CONFIG_OTP_SIM */
+#endif  /* CONFIG_SOC_AST1060 */
             return i;
         }
     }

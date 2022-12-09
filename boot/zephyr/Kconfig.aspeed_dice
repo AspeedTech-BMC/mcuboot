@@ -82,3 +82,11 @@ config ASPEED_DICE_CERT_ALIAS_SUBJECT_COUNTRY
 	string "Aspeed DICE alias certificate subject country"
 	help
 	  Subject country of alias certificate.
+
+config OTP_SIM
+	depends on !OTP_ASPEED
+	default n
+	bool "Simulate OTP"
+	help
+	  Enable if OTP is simulated by flash
+
