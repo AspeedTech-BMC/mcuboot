@@ -499,6 +499,25 @@ bool is_secureboot_en(void)
     return (reg & SEC_STATUS_SECUREBOOT_EN);
 #endif
 }
+
+bool is_cdi_en(void)
+{
+#if defined (CONFIG_OTP_SIM)
+    const struct device *flash_dev = NULL;
+    uint32_t otp_conf3;
+    // In OTP simmulation partition
+    // OTPCFG start addr is 0xfe000 in fmc_cs0
+    flash_dev = device_get_binding(FLASH_OTP_DEV);
+    flash_read(flash_dev, FLASH_OTP_CONF_DICE, &otp_conf3, sizeof(otp_conf3));
+
+    return (otp_conf3 & OTP_CONF3_CDI_EN) ? false : true;
+#else
+    uint32_t otp_conf;
+    aspeed_otp_read_conf(OTP_CONF3, &otp_conf, 1);
+    return (otp_conf & OTP_CONF3_CDI_EN);
+#endif
+}
+
 #endif
 
 void main(void)
@@ -599,10 +618,12 @@ void main(void)
 #if defined(CONFIG_SOC_AST1060)
     // TODO: Check whether secureboot is enabled?
     if (is_secureboot_en()) {
-        BOOT_LOG_INF("Secure boot is enabled, DICE process start");
-
-        if (dice_start(0, &rsp))
-            FIH_PANIC;
+        BOOT_LOG_INF("Secure boot is enabled");
+        if (is_cdi_en()) {
+            BOOT_LOG_INF("DICE process start");
+            if (dice_start(0, &rsp))
+                FIH_PANIC;
+        }
     } else {
         BOOT_LOG_INF("Secure boot is not enabled, bypass DICE process");
     }
