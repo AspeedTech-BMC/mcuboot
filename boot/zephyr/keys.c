@@ -53,7 +53,7 @@ extern unsigned int ed25519_pub_key_len;
  *       provided and added to the build manually.
  */
 #if defined(HAVE_KEYS)
-#if defined(CONFIG_SOC_AST1060)
+#if !defined(CONFIG_ASPEED_SINGLE_KEY)
 const struct bootutil_key bootutil_keys[2] = {
     {
 #if defined(MCUBOOT_SIGN_RSA)

@@ -93,6 +93,7 @@ zephyr_library_sources(
   os.c
   keys.c
   dice.c
+  mp_gpio.c
   mbedtls_alt.c
   )
 

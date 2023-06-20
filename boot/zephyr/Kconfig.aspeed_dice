@@ -90,3 +90,14 @@ config OTP_SIM
 	help
 	  Enable if OTP is simulated by flash
 
+config ASPEED_DICE_SELF_SIGN
+	default y
+	bool "Generate self-signed DevID certificate"
+	help
+	  Generate self-siegned DevID certificate
+
+config ASPEED_SINGLE_KEY
+	default y
+	bool "Single device firmware signing key"
+	help
+	  Enable if preload fw and ODM fw are signed by the same key

@@ -1,8 +1,8 @@
 #pragma once
 
-#include <drivers/misc/aspeed/otp_aspeed.h>
 #include <soc.h>
 #include <sys/util.h>
+#include <drivers/misc/aspeed/otp_aspeed.h>
 
 #define DWORD                     4
 #define KEY_RETIREMENT_DW_ADDR    0x6f0

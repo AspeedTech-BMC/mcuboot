@@ -236,7 +236,7 @@ bootutil_find_key(uint8_t *keyhash, uint8_t keyhash_len)
         bootutil_sha256_finish(&sha256_ctx, hash);
         if (!memcmp(hash, keyhash, keyhash_len)) {
             bootutil_sha256_drop(&sha256_ctx);
-#if defined(CONFIG_SOC_AST1060)
+#if !defined(CONFIG_ASPEED_SINGLE_KEY)
 #if defined(CONFIG_OTP_SIM)
             uint32_t buf;
             const struct device *flash_dev = NULL;
@@ -256,7 +256,7 @@ bootutil_find_key(uint8_t *keyhash, uint8_t keyhash_len)
             }
             set_dev_fw_key_id(i);
 #endif  /* CONFIG_OTP_SIM */
-#endif  /* CONFIG_SOC_AST1060 */
+#endif
             return i;
         }
     }

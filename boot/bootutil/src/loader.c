@@ -50,9 +50,13 @@
 #endif
 
 #if defined(CONFIG_SOC_AST1060)
+#include <soc.h>
 #include <drivers/flash.h>
+#include <drivers/gpio.h>
 #include <sys/reboot.h>
+#include "bootutil/otp.h"
 #include "dice.h"
+#include "mp_gpio.h"
 #endif
 
 #include "mcuboot_config/mcuboot_config.h"
@@ -2301,9 +2305,6 @@ boot_remove_image_from_sram(uint32_t img_dst, uint32_t img_sz)
 #endif /* MCUBOOT_RAM_LOAD */
 
 #if defined(CONFIG_SOC_AST1060)
-#include <soc.h>
-#include "bootutil/otp.h"
-
 fih_int
 context_boot_go(struct boot_loader_state *state, struct boot_rsp *rsp)
 {
@@ -2340,6 +2341,7 @@ context_boot_go(struct boot_loader_state *state, struct boot_rsp *rsp)
                     BOOT_IMG_AREA(state, BOOT_PRIMARY_SLOT)->fa_device_id;
                 rsp->br_image_off = boot_img_slot_off(state, BOOT_PRIMARY_SLOT);
                 rsp->br_hdr = hdr;
+#if !defined(CONFIG_ASPEED_SINGLE_KEY)
 #if defined (CONFIG_OTP_SIM)
                 // 1st slot firmware is valid
                 // Check whether the current firmware is signed by customer's key
@@ -2377,6 +2379,7 @@ context_boot_go(struct boot_loader_state *state, struct boot_rsp *rsp)
                     }
                 }
 #endif
+#endif
                 goto out;
             }
         }
@@ -2411,6 +2414,7 @@ context_boot_go(struct boot_loader_state *state, struct boot_rsp *rsp)
         uint32_t offset = 0;
 
         BOOT_LOG_INF("Recoverying...");
+        uint32_t strap[2] = {0};
         int64_t timestamp = k_uptime_get();
         // recovery and SOC reset
         flash_area_erase(fap1, 0, fap1->fa_size);
@@ -2421,10 +2425,37 @@ context_boot_go(struct boot_loader_state *state, struct boot_rsp *rsp)
         }
         int64_t timestamp1 = k_uptime_get() - timestamp;
         BOOT_LOG_INF("Recovery done, elapsed time: %lld ms", timestamp1);
-        BOOT_LOG_INF("Rebooting...");
-        sys_arch_reboot(SYS_REBOOT_COLD);
+#if defined(CONFIG_OTP_SIM)
+        const struct device *flash_dev = NULL;
+        flash_dev = device_get_binding(FLASH_OTP_DEV);
+        // Read OTPCFG 16(OTPSTRAP[32:0])
+        flash_read(flash_dev, FLASH_OTP_CONF_BASE + (16 * 2 * DWORD), strap, sizeof(strap));
+        strap[0] = ~strap[0];
+#else
+        aspeed_otp_read_strap(strap);
+#endif
+        if (strap[0] & BIT(2)) {
+            // External SPI interface has been disabled, it is normal recovery.
+            BOOT_LOG_INF("Rebooting...");
+            sys_arch_reboot(SYS_REBOOT_COLD);
+        } else {
+            // External SPI interface is not disabled yet, it is in manufacturing process.
+            // Close external SPI interface and notify programmer
+            BOOT_LOG_INF("MP Process completed!");
+#if defined(CONFIG_OTP_SIM)
+            strap[0] |= BIT(2);
+            strap[0] = ~strap[0];
+            flash_write(flash_dev, FLASH_OTP_CONF_BASE + (16 * 2 * DWORD), strap, sizeof(strap));
+#else
+            aspeed_otp_prog_strap_bit(2, 1);
+#endif
+            set_mp_status(1, 1);
+            while (1)
+                ;
+        }
     } else {
         BOOT_LOG_ERR("Recovery failed");
+        set_mp_status(0, 1);
         boot_remove_image_from_sram(img_dst, img_sz);
     }
 

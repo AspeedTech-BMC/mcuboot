@@ -36,6 +36,7 @@
 #include "arch/arm/aarch32/cortex_m/cmsis.h"
 
 #include "dice.h"
+#include "mp_gpio.h"
 #include "bootutil/otp.h"
 
 #ifdef CONFIG_MCUBOOT_SERIAL
@@ -606,6 +607,9 @@ void main(void)
     }
 #endif
 
+    init_mp_status_gpios();
+    set_mp_status(0, 0);
+
     FIH_CALL(boot_go, fih_rc, &rsp);
     if (fih_not_eq(fih_rc, FIH_SUCCESS)) {
         BOOT_LOG_ERR("Unable to find bootable image");
@@ -616,13 +620,21 @@ void main(void)
                  rsp.br_image_off);
 
 #if defined(CONFIG_SOC_AST1060)
-    // TODO: Check whether secureboot is enabled?
     if (is_secureboot_en()) {
         BOOT_LOG_INF("Secure boot is enabled");
         if (is_cdi_en()) {
             BOOT_LOG_INF("DICE process start");
-            if (dice_start(0, &rsp))
+#if defined(CONFIG_ASPEED_DICE_SELF_SIGN)
+            if (dice_start(1, &rsp)) {
+                set_mp_status(0, 1);
                 FIH_PANIC;
+            }
+#else
+            if (dice_start(0, &rsp)) {
+                set_mp_status(0, 1);
+                FIH_PANIC;
+            }
+#endif
         }
     } else {
         BOOT_LOG_INF("Secure boot is not enabled, bypass DICE process");

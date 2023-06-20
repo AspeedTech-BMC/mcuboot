@@ -770,12 +770,10 @@ int hash_device_firmware(uint32_t addr, uint32_t fw_size, uint8_t *hash, uint32_
 
 	if (flash_dev == NULL) {
 		LOG_ERR("Failed to bind fmc_cs0");
-	} else {
-		LOG_INF("fmc_cs0 = %p", flash_dev);
+		return -1;
 	}
 
 	mbedtls_sha512_context sha_ctx;
-	printk("%s %p\n", __func__, &sha_ctx);
 	mbedtls_sha512_init(&sha_ctx);
 	mbedtls_sha512_starts(&sha_ctx, 1 /* SHA-384 */);
 
@@ -1050,8 +1048,8 @@ int dice_start(size_t cert_type, struct boot_rsp *rsp)
 	x509_set_serial_number(devid_serial_num, cdi_digest, sizeof(cdi_digest));
 
 	// Hash device firmware as FWID
-	hash_device_firmware(rsp->br_image_off, rsp->br_hdr->ih_img_size, dev_fwid,
-			SHA384_HASH_LENGTH/*, HASH_SHA384*/);
+	CHK(hash_device_firmware(rsp->br_image_off, rsp->br_hdr->ih_img_size, dev_fwid,
+			SHA384_HASH_LENGTH/*, HASH_SHA384*/));
 
 	// Derive Alias key pair from CDI and FWID
 	CHK(derive_key_pair(&ctx_alias, alias_priv_key_buf, alias_pub_key_buf,
