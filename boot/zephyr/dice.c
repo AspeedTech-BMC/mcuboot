@@ -30,6 +30,7 @@ MCUBOOT_LOG_MODULE_REGISTER(dice);
 
 #define CDI_LENGTH                        64
 #define CDI_ADDRESS                       0x79001800
+#define ALIAS_PRIV_KEY_ADDRESS            0xBFC00
 #define SHA1_HASH_LENGTH                  20
 #define SHA256_HASH_LENGTH                32
 #define SHA384_HASH_LENGTH                48
@@ -87,7 +88,6 @@ typedef struct {
 
 typedef struct {
 	PFR_CERT_INFO cert;
-	uint8_t privkey[ECDSA384_PRIVATE_KEY_SIZE];
 	uint8_t pubkey[ECDSA384_PUBLIC_KEY_SIZE];
 } PFR_ALIAS_CERT_INFO;
 
@@ -1054,6 +1054,9 @@ int dice_start(size_t cert_type, struct boot_rsp *rsp)
 	// Derive Alias key pair from CDI and FWID
 	CHK(derive_key_pair(&ctx_alias, alias_priv_key_buf, alias_pub_key_buf,
 			get_rand_bytes_by_cdi_fwid, NULL));
+
+	// Put alias private key in sram offset 0xBFC00
+	memcpy((void *)ALIAS_PRIV_KEY_ADDRESS, alias_priv_key_buf, sizeof(alias_priv_key_buf));
 	//LOG_HEXDUMP_INF(alias_priv_key_buf, ECDSA384_PRIVATE_KEY_SIZE, "Alias PRIKEY :");
 	//LOG_HEXDUMP_INF(alias_pub_key_buf, ECDSA384_PUBLIC_KEY_SIZE, "Alias PUBKEY :");
 
@@ -1070,7 +1073,6 @@ int dice_start(size_t cert_type, struct boot_rsp *rsp)
 	CHK(x509_gen_cert(&der_ctx, &tbs_sig));
 
 	generate_certificate_info(&alias_cert_info.cert, &der_ctx);
-	memcpy(alias_cert_info.privkey, alias_priv_key_buf, sizeof(alias_cert_info.privkey));
 	memcpy(alias_cert_info.pubkey, alias_pub_key_buf, sizeof(alias_cert_info.pubkey));
 
 	// Read alias certificate from flash and compare with generated alias certificate

@@ -63,13 +63,13 @@
 &sram0 {
 	/*
 	 * 0x00000000 - 0x0002FFFF : bootloader
-	 * 0x00030000 - 0x000BFFFF : chain-loaded image
-	 * 0x000A0000 - 0x000BFFFF : non-cached memory
+	 * 0x00030000 - 0x0009FFFF : chain-loaded image
+	 * 0x000A0000 - 0x000BFBFF : non-cached memory
 	 * NOTE:
 	 * Non-cached memory address should align with chan-loaded image's
 	 * non-cached memory region.
 	 */
-	reg = <0 DT_SIZE_K(192)>, <0xA0000 DT_SIZE_K(128)>;
+	reg = <0 DT_SIZE_K(192)>, <0xA0000 DT_SIZE_K(127)>;
 };
 
 &wdt0 {
