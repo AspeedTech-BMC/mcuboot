@@ -61,6 +61,9 @@ zephyr_library_sources(
   flash_map_extended.c
   os.c
   keys.c
+  dice.c
+  mp_gpio.c
+  mbedtls_alt.c
   )
 
 if(DEFINED CONFIG_ENABLE_MGMT_PERUSER)

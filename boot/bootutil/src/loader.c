@@ -59,6 +59,17 @@
 
 #include "mcuboot_config/mcuboot_config.h"
 
+#if defined(CONFIG_SOC_AST1060)
+#include <soc.h>
+#include <zephyr/kernel.h>
+#include <zephyr/drivers/flash.h>
+#include <zephyr/drivers/gpio.h>
+#include <zephyr/sys/reboot.h>
+#include "bootutil/otp.h"
+#include "dice.h"
+#include "mp_gpio.h"
+#endif
+
 BOOT_LOG_MODULE_DECLARE(mcuboot);
 
 static struct boot_loader_state boot_data;
@@ -67,6 +78,11 @@ static struct boot_loader_state boot_data;
 #define IMAGES_ITER(x) for ((x) = 0; (x) < BOOT_IMAGE_NUMBER; ++(x))
 #else
 #define IMAGES_ITER(x)
+#endif
+
+#if defined(CONFIG_SOC_AST1060)
+extern void sys_arch_reboot(int type);
+extern uint8_t flash_buf[PAGE_SIZE] NON_CACHED_BSS_ALIGN16;
 #endif
 
 /*
@@ -2990,6 +3006,83 @@ boot_load_image_to_sram(struct boot_loader_state *state)
 }
 
 /**
+ * Loads the active slot of the current image into SRAM. The load address and
+ * image size is extracted from the image header.
+ *
+ * @param  state        Boot loader status information.
+ *
+ * @return              0 on success; nonzero on failure.
+ */
+static int
+boot_load_image_to_sram_by_slot(struct boot_loader_state *state, uint32_t slot)
+{
+    struct image_header *hdr = NULL;
+    uint32_t img_dst;
+    uint32_t img_sz;
+    int rc;
+
+    hdr = boot_img_hdr(state, slot);
+
+    if (hdr->ih_flags & IMAGE_F_RAM_LOAD) {
+
+        img_dst = hdr->ih_load_addr;
+
+        rc = boot_read_image_size(state, slot, &img_sz);
+        if (rc != 0) {
+            return rc;
+        }
+
+        state->slot_usage[BOOT_CURR_IMG(state)].img_dst = img_dst;
+        state->slot_usage[BOOT_CURR_IMG(state)].img_sz = img_sz;
+
+        rc = boot_verify_ram_load_address(state);
+        if (rc != 0) {
+            BOOT_LOG_INF("Image RAM load address 0x%x is invalid.", img_dst);
+            return rc;
+        }
+
+#if (BOOT_IMAGE_NUMBER > 1)
+        rc = boot_check_ram_load_overlapping(state);
+        if (rc != 0) {
+            BOOT_LOG_INF("Image RAM loading to address 0x%x would overlap with\
+                         another image.", img_dst);
+            return rc;
+        }
+#endif
+#ifdef MCUBOOT_ENC_IMAGES
+        /* decrypt image if encrypted and copy it to RAM */
+        if (IS_ENCRYPTED(hdr)) {
+            rc = boot_decrypt_and_copy_image_to_sram(state, slot, hdr, img_sz, img_dst);
+        } else {
+            rc = boot_copy_image_to_sram(state, slot, img_dst, img_sz);
+        }
+#else
+        /* Copy image to the load address from where it currently resides in
+         * flash.
+         */
+        rc = boot_copy_image_to_sram(state, slot, img_dst, img_sz);
+#endif
+        if (rc != 0) {
+            BOOT_LOG_INF("RAM loading to 0x%x is failed.", img_dst);
+        } else {
+            BOOT_LOG_INF("RAM loading to 0x%x is succeeded.", img_dst);
+        }
+    } else {
+        /* Only images that support IMAGE_F_RAM_LOAD are allowed if
+         * MCUBOOT_RAM_LOAD is set.
+         */
+        rc = BOOT_EBADIMAGE;
+    }
+
+    if (rc != 0) {
+        state->slot_usage[BOOT_CURR_IMG(state)].img_dst = 0;
+        state->slot_usage[BOOT_CURR_IMG(state)].img_sz = 0;
+    }
+
+    return rc;
+}
+
+/**
  * Removes an image from SRAM, by overwriting it with zeros.
  *
  * @param  state        Boot loader status information.
@@ -3186,6 +3279,169 @@ boot_update_hw_rollback_protection(struct boot_loader_state *state)
 #endif
 }
 
+#if defined(CONFIG_SOC_AST1060)
+fih_int
+context_boot_go(struct boot_loader_state *state, struct boot_rsp *rsp)
+{
+    struct image_header *hdr = NULL;
+    uint32_t slot;
+    int fa_id;
+    int rc;
+    uint32_t img_loaded = 0;
+    fih_int fih_rc = FIH_FAILURE;
+
+    /* Open primary and secondary image areas for the duration
+     * of this call.
+     */
+    for (slot = 0; slot < BOOT_NUM_SLOTS; slot++) {
+        fa_id = flash_area_id_from_image_slot(slot);
+        rc = flash_area_open(fa_id, &BOOT_IMG_AREA(state, slot));
+        assert(rc == 0);
+    }
+
+    // Validate 1st slot firmware image
+    hdr = boot_img_hdr(state, BOOT_PRIMARY_SLOT);
+    rc = boot_read_image_header(state, BOOT_PRIMARY_SLOT, hdr, NULL);
+    if (rc == 0 && boot_is_header_valid(hdr, BOOT_IMG_AREA(state, BOOT_PRIMARY_SLOT))) {
+        rc = boot_load_image_to_sram(state);
+        if (rc == 0) {
+            img_loaded = 1;
+            FIH_CALL(boot_validate_slot, fih_rc, state, BOOT_PRIMARY_SLOT, NULL);
+            if (FIH_EQ(fih_rc, FIH_SUCCESS)) {
+                rsp->br_flash_dev_id =
+                    BOOT_IMG_AREA(state, BOOT_PRIMARY_SLOT)->fa_id;
+                rsp->br_image_off = boot_img_slot_off(state, BOOT_PRIMARY_SLOT);
+                rsp->br_hdr = hdr;
+#if !defined(CONFIG_ASPEED_SINGLE_KEY)
+#if defined (CONFIG_OTP_SIM)
+                // 1st slot firmware is valid
+                // Check whether the current firmware is signed by customer's key
+                const struct device *flash_dev = NULL;
+                uint32_t key_retirement;
+                int key_id = get_dev_fw_key_id();
+                flash_dev = device_get_binding(FLASH_OTP_DEV);
+
+                if (key_id > 0) {
+                    // 1st slot firmware uses customer's public key
+                    // Check whether aspeed public key is retired
+                    flash_read(flash_dev, FLASH_OTP_KEY_RETIREMENT_ADDR, &key_retirement,
+                            sizeof(key_retirement));
+                    if (key_retirement & BIT(0)) {
+                        // Retire aspeed public key
+                        key_retirement &= ~BIT(0);
+                        flash_write(flash_dev, FLASH_OTP_KEY_RETIREMENT_ADDR, &key_retirement,
+                                sizeof(key_retirement));
+                    }
+                }
+#else
+                // 1st slot firmware is valid
+                // Check whether the current firmware is signed by customer's key
+                uint32_t key_retirement;
+                int key_id = get_dev_fw_key_id();
+
+                if (key_id > 0) {
+                    // 1st slot firmware uses customer's public key
+                    // Check whether aspeed public key is retired
+                    aspeed_otp_read_data(KEY_RETIREMENT_DW_ADDR, &key_retirement, 1);
+                    if (!(key_retirement & BIT(0))) {
+                        // Retire aspeed public key
+                        key_retirement |= BIT(0);
+                        aspeed_otp_prog_data(KEY_RETIREMENT_DW_ADDR, &key_retirement, 1);
+                    }
+                }
+#endif
+#endif
+                goto out;
+            }
+        }
+    }
+
+    if (img_loaded)
+        boot_remove_image_from_sram(state);
+
+    // Recovery process
+    // The 1st slot firmware image is invalid, validate the 2nd slot firmware image
+    BOOT_LOG_INF("Primary firmware image is invalid, verifying secondary firmware...");
+    hdr = boot_img_hdr(state, BOOT_SECONDARY_SLOT);
+    rc = boot_read_image_header(state, BOOT_SECONDARY_SLOT, hdr, NULL);
+    if (rc || !boot_is_header_valid(hdr, BOOT_IMG_AREA(state, BOOT_SECONDARY_SLOT))) {
+        // The 2nd image is not found, lockdown
+        BOOT_LOG_ERR("Second slot image is not found");
+        rc = -1;
+        goto out;
+    }
+
+    rc = boot_load_image_to_sram_by_slot(state, BOOT_SECONDARY_SLOT);
+    if (rc != 0) {
+        // Failed to load the 2nd slot firmware for validation, lockdown
+        BOOT_LOG_ERR("Second slot image is invalid");
+        goto out;
+    }
+
+    FIH_CALL(boot_validate_slot, fih_rc, state, BOOT_SECONDARY_SLOT, NULL);
+    if (FIH_EQ(fih_rc, FIH_SUCCESS)) {
+        const struct flash_area *fap1 = BOOT_IMG_AREA(state, BOOT_PRIMARY_SLOT);
+        const struct flash_area *fap2 = BOOT_IMG_AREA(state, BOOT_SECONDARY_SLOT);
+        uint32_t offset = 0;
+
+        BOOT_LOG_INF("Recoverying...");
+        uint32_t strap[2] = {0};
+        int64_t timestamp = k_uptime_get();
+        // recovery and SOC reset
+        flash_area_erase(fap1, 0, fap1->fa_size);
+        for (int i = 0; i < (fap1->fa_size / PAGE_SIZE); i++) {
+            flash_area_read(fap2, offset, flash_buf, PAGE_SIZE);
+            flash_area_write(fap1, offset, flash_buf, PAGE_SIZE);
+            offset += PAGE_SIZE;
+        }
+        int64_t timestamp1 = k_uptime_get() - timestamp;
+        BOOT_LOG_INF("Recovery done, elapsed time: %lld ms", timestamp1);
+#if defined(CONFIG_OTP_SIM)
+        const struct device *flash_dev = NULL;
+        flash_dev = device_get_binding(FLASH_OTP_DEV);
+        // Read OTPCFG 16(OTPSTRAP[32:0])
+        flash_read(flash_dev, FLASH_OTP_CONF_BASE + (16 * 2 * DWORD), strap, sizeof(strap));
+        strap[0] = ~strap[0];
+#else
+        aspeed_otp_read_strap(strap);
+#endif
+        if (strap[0] & BIT(2)) {
+            // External SPI interface has been disabled, it is normal recovery.
+            BOOT_LOG_INF("Rebooting...");
+            sys_arch_reboot(SYS_REBOOT_COLD);
+        } else {
+            // External SPI interface is not disabled yet, it is in manufacturing process.
+            // Close external SPI interface and notify programmer
+            BOOT_LOG_INF("MP Process completed!");
+#if defined(CONFIG_OTP_SIM)
+            strap[0] |= BIT(2);
+            strap[0] = ~strap[0];
+            flash_write(flash_dev, FLASH_OTP_CONF_BASE + (16 * 2 * DWORD), strap, sizeof(strap));
+#else
+            aspeed_otp_prog_strap_bit(2, 1);
+#endif
+            set_mp_status(1, 1);
+            while (1)
+                ;
+        }
+    } else {
+        BOOT_LOG_ERR("Recovery failed");
+        set_mp_status(0, 1);
+        boot_remove_image_from_sram(state);
+    }
+
+out:
+    for (slot = 0; slot < BOOT_NUM_SLOTS; slot++) {
+        flash_area_close(BOOT_IMG_AREA(state, BOOT_NUM_SLOTS - 1 - slot));
+    }
+
+    if (rc) {
+        fih_rc = fih_int_encode(rc);
+    }
+
+    FIH_RET(fih_rc);
+}
+#else /* CONFIG_SOC_AST106=n */
 fih_ret
 context_boot_go(struct boot_loader_state *state, struct boot_rsp *rsp)
 {
@@ -3255,6 +3511,7 @@ out:
 
     FIH_RET(fih_rc);
 }
+#endif /* CONFIG_SOC_AST1060=n */
 #endif /* MCUBOOT_DIRECT_XIP || MCUBOOT_RAM_LOAD */
 
 /**

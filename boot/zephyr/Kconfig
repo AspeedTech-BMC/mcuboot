@@ -783,3 +783,5 @@ config MCUBOOT_VERIFY_IMG_ADDRESS
 	  linked at the correct address is loaded.
 
 source "Kconfig.zephyr"
+
+rsource "Kconfig.aspeed_dice"
