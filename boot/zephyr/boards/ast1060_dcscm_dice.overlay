@@ -1,0 +1,88 @@
+/*
+ * Copyright (c) 2021 ASPEED Technology Inc.
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
+ / {
+	chosen {
+		zephyr,flash-controller = &fmc_cs0;
+		zephyr,flash = &fmc_cs0;
+	};
+
+	/delete-node/ memory@400;
+	sram1: memory@a0000 {
+	       compatible = "zephyr,memory-region", "mmio-sram";
+	       device_type = "memory";
+	       reg = <0xa0000 DT_SIZE_K(127)>;
+	       zephyr,memory-region = "RAM_NC";
+	       zephyr,memory-region-mpu = "RAM";
+	};
+
+	pfr_gpio_mp {
+		compatible = "aspeed,pfr-gpio-mp";
+		mp-status1-out-gpios = <&gpio0_i_l 24 0>; /* GPIO_L0 */
+		mp-status2-out-gpios = <&gpio0_i_l 2 0>;  /* GPIO_I2 */
+	};
+};
+
+&fmc {
+	status = "okay";
+};
+
+&fmc_cs0 {
+	/delete-property/ write-block-size;
+	status = "okay";
+	spi-max-buswidth = <4>;
+	spi-max-frequency = <50000000>;
+	partitions {
+		compatible = "fixed-partitions";
+		#address-cells = <1>;
+		#size-cells = <1>;
+
+		boot_partition: partition@0 {
+			label = "mcuboot";
+			reg = <0x00000000 0x0001c000>;
+		};
+
+		cert_partition: partition@1c000 {
+			label = "certificate";
+			reg = <0x0001c000 0x00004000>;
+		};
+
+		slot0_partition: partition@20000 {
+			label = "image-0";
+			reg = <0x00020000 0x00060000>;
+		};
+
+		/* slot1 and scratch are dummy partitions */
+		slot1_partition: partition@80000 {
+			label = "image-1";
+			reg = <0x00080000 0x00060000>;
+		};
+
+		scratch_partition: partition@e0000 {
+			label = "image-scratch";
+			reg = <0x000e0000 0x00020000>;
+		};
+	};
+};
+
+&sram0 {
+	/*
+	 * 0x00000000 - 0x0002FFFF : bootloader
+	 * 0x00030000 - 0x0009FFFF : chain-loaded image
+	 * 0x000A0000 - 0x000BFBFF : non-cached memory
+	 * NOTE:
+	 * Non-cached memory address should align with chan-loaded image's
+	 * non-cached memory region.
+	 */
+	reg = <0 DT_SIZE_K(192)>;
+};
+
+&wdt0 {
+    status = "okay";
+};
+
+&wdt1 {
+    status = "okay";
+};

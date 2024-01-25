@@ -42,6 +42,10 @@
 #include "bootutil/mcuboot_status.h"
 #include "flash_map_backend/flash_map_backend.h"
 
+#include "dice.h"
+#include "mp_gpio.h"
+#include "bootutil/otp.h"
+
 /* Check if Espressif target is supported */
 #ifdef CONFIG_SOC_FAMILY_ESP32
 
@@ -530,6 +534,50 @@ static void boot_serial_enter()
 }
 #endif
 
+#if defined(CONFIG_SOC_AST1060)
+#define SEC_BASE                        0x7e6f2000
+#define SEC_STATUS_ADDR                 (SEC_BASE + 0x14)
+#define SEC_STATUS_SECUREBOOT_EN        BIT(6)
+
+bool is_secureboot_en(void)
+{
+#if defined (CONFIG_OTP_SIM)
+    const struct device *flash_dev = NULL;
+    uint8_t secureboot_en;
+    // In OTP simmulation partition
+    // OTPCFG start addr is 0xfe000 in fmc_cs0
+    flash_dev = device_get_binding(FLASH_OTP_DEV);
+    flash_read(flash_dev, FLASH_OTP_CONF_BASE, &secureboot_en, 1);
+
+    return (secureboot_en & BIT(1)) ? false : true;
+#else
+    // SEC14
+    uint32_t reg = sys_read32(SEC_STATUS_ADDR);
+
+    return (reg & SEC_STATUS_SECUREBOOT_EN);
+#endif
+}
+
+bool is_cdi_en(void)
+{
+#if defined (CONFIG_OTP_SIM)
+    const struct device *flash_dev = NULL;
+    uint32_t otp_conf3;
+    // In OTP simmulation partition
+    // OTPCFG start addr is 0xfe000 in fmc_cs0
+    flash_dev = device_get_binding(FLASH_OTP_DEV);
+    flash_read(flash_dev, FLASH_OTP_CONF_DICE, &otp_conf3, sizeof(otp_conf3));
+
+    return (otp_conf3 & OTP_CONF3_CDI_EN) ? false : true;
+#else
+    uint32_t otp_conf;
+    aspeed_otp_read_conf(OTP_CONF3, &otp_conf, 1);
+    return (otp_conf & OTP_CONF3_CDI_EN);
+#endif
+}
+
+#endif
+
 int main(void)
 {
     struct boot_rsp rsp;
@@ -615,6 +663,9 @@ int main(void)
     }
 #endif
 
+    init_mp_status_gpios();
+    set_mp_status(0, 0);
+
 #ifdef CONFIG_BOOT_SERIAL_WAIT_FOR_DFU
     /* Initialize the boot console, so we can already fill up our buffers while
      * waiting for the boot image check to finish. This image check, can take
@@ -666,6 +717,27 @@ int main(void)
 
     BOOT_LOG_INF("Bootloader chainload address offset: 0x%x",
                  rsp.br_image_off);
+#if defined(CONFIG_SOC_AST1060)
+    if (is_secureboot_en()) {
+        BOOT_LOG_INF("Secure boot is enabled");
+        if (is_cdi_en()) {
+            BOOT_LOG_INF("DICE process start");
+#if defined(CONFIG_ASPEED_DICE_SELF_SIGN)
+            if (dice_start(1, &rsp)) {
+                set_mp_status(0, 1);
+                FIH_PANIC;
+            }
+#else
+            if (dice_start(0, &rsp)) {
+                set_mp_status(0, 1);
+                FIH_PANIC;
+            }
+#endif
+        }
+    } else {
+        BOOT_LOG_INF("Secure boot is not enabled, bypass DICE process");
+    }
+#endif
 
 #if defined(MCUBOOT_DIRECT_XIP)
     BOOT_LOG_INF("Jumping to the image slot");
