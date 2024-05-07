@@ -792,49 +792,6 @@ int hash_device_firmware(uint32_t addr, uint32_t fw_size, uint8_t *hash, uint32_
 	return 0;
 }
 
-// TODO:
-// Since srand() is not supported in current zephyr, we use the hash of cdi digest
-// as the seed of mbedtls random number generator.
-#if 0
-int get_rand_bytes( void *rngState, uint8_t *output, size_t length)
-{
-	ARG_UNUSED(rngState);
-	for (; length; length--)
-		*output++ = (uint8_t)rand();
-
-	return 0;
-}
-
-int seed_drbg(uint8_t *digest, uint32_t digest_len)
-{
-	uint32_t i, seed;
-	mbedtls_md_info_t *md_sha384;
-	int ret = -1;
-
-	for (i = 0; i < digest_len; i++) {
-		seed += ~(digest[i]);
-	}
-	srand(~seed);
-
-	mbedtls_hmac_drbg_init(&hmac_drbg_ctx);
-
-	if (!(md_sha384 = mbedtls_md_info_from_type(MBEDTLS_MD_SHA384)))
-		goto free_drbg;
-
-	if (mbedtls_hmac_drbg_seed(&hmac_drbg_ctx, md_sha384, get_rand_bytes, NULL, NULL, 0))
-		goto free_drbg;
-
-	ret = 0;
-
-free_drbg:
-	if (ret)
-		mbedtls_hmac_drbg_free(&hmac_drbg_ctx);
-
-	return ret;
-}
-#else
-
-// Temporary solution
 int get_rand_bytes_by_cdi(void *rngState, uint8_t *output, size_t length)
 {
 	uint8_t cdi_digest_digest[SHA384_HASH_LENGTH];
@@ -892,9 +849,6 @@ free_drbg:
 
 	return ret;
 }
-
-#endif
-
 
 int derive_key_pair(mbedtls_ecdsa_context *ctx_sign, uint8_t *privkey_buf, uint8_t *pubkey_buf,
 		int (*f_entropy)(void *, unsigned char *, size_t), void *p_entropy)
