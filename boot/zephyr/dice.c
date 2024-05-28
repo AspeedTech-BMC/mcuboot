@@ -176,7 +176,7 @@ error:
 	return -1;
 }
 
-int x509_add_int_from_array(PFR_DER_CTX *ctx, uint8_t *val, uint32_t bytes)
+int x509_add_int_without_tag(PFR_DER_CTX *ctx, uint8_t *val, uint32_t bytes)
 {
 	uint32_t i, num_leading_zeros = 0;
 	bool negative;
@@ -192,7 +192,6 @@ int x509_add_int_from_array(PFR_DER_CTX *ctx, uint8_t *val, uint32_t bytes)
 	}
 
 	negative = val[num_leading_zeros] >= 128;
-	ctx->buffer[ctx->position++] = 0x02;
 
 	if (bytes == num_leading_zeros) {
 		ctx->buffer[ctx->position++] = 1;
@@ -214,6 +213,21 @@ error:
 	return -1;
 }
 
+int x509_add_int_from_array(PFR_DER_CTX *ctx, uint8_t *val, uint32_t bytes)
+{
+	ASRT(bytes < 128);
+	CHECK_SPACE2(ctx, bytes);
+
+	// Add integer tag
+	ctx->buffer[ctx->position++] = 0x02;
+
+	CHK(x509_add_int_without_tag(ctx, val, bytes));
+
+	return 0;
+error:
+	return -1;
+}
+
 int x509_add_short_explicit_int(PFR_DER_CTX *ctx, int val)
 {
 	long valx;
@@ -227,6 +241,13 @@ int x509_add_short_explicit_int(PFR_DER_CTX *ctx, int val)
 	return (x509_add_int_from_array(ctx, (uint8_t *)&valx, 4));
 error:
 	return -1;
+}
+
+int x509_add_implicit_int(PFR_DER_CTX *ctx, int val)
+{
+	long valx = htonl(val);
+
+	return (x509_add_int_without_tag(ctx, (uint8_t *)&valx, 4));
 }
 
 int x509_add_int(PFR_DER_CTX *ctx, int val)
@@ -463,6 +484,18 @@ int x509_add_oct_str(PFR_DER_CTX *ctx, uint8_t *oct_str, uint32_t oct_str_len)
 	ctx->position += x509_get_int_encoded_num_bytes(oct_str_len);
 	memcpy(ctx->buffer + ctx->position, oct_str, oct_str_len);
 	ctx->position += oct_str_len;
+
+	return 0;
+error:
+	return -1;
+}
+
+int x509_start_implicit(PFR_DER_CTX *ctx, uint32_t num)
+{
+	CHECK_SPACE(ctx);
+	ASRT(ctx->collection_position < DER_MAX_NESTED);
+	ctx->buffer[ctx->position++] = 0x80 + (uint8_t)num;
+	ctx->collection_start[ctx->collection_position++] = ctx->position;
 
 	return 0;
 error:
