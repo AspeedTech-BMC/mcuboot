@@ -3325,7 +3325,7 @@ boot_update_hw_rollback_protection(struct boot_loader_state *state)
 }
 
 #if defined(CONFIG_SOC_AST1060)
-fih_int
+fih_ret
 context_boot_go(struct boot_loader_state *state, struct boot_rsp *rsp)
 {
     struct image_header *hdr = NULL;
@@ -3333,7 +3333,7 @@ context_boot_go(struct boot_loader_state *state, struct boot_rsp *rsp)
     int fa_id;
     int rc;
     uint32_t img_loaded = 0;
-    fih_int fih_rc = FIH_FAILURE;
+    fih_ret fih_rc = FIH_FAILURE;
 
     /* Open primary and secondary image areas for the duration
      * of this call.
@@ -3396,7 +3396,15 @@ context_boot_go(struct boot_loader_state *state, struct boot_rsp *rsp)
                 }
 #endif
 #endif
-                goto out;
+		rc = boot_add_shared_data(state, state->slot_usage[BOOT_CURR_IMG(state)].active_slot);
+		if (rc != 0) {
+			FIH_SET(fih_rc, FIH_FAILURE);
+		} else {
+#ifdef MCUBOOT_HAVE_LOGGING
+			print_loaded_images(state);
+#endif
+			goto out;
+		}
             }
         }
     }
@@ -3481,7 +3489,7 @@ out:
     }
 
     if (rc) {
-        fih_rc = fih_int_encode(rc);
+	    FIH_SET(fih_rc, FIH_FAILURE);
     }
 
     FIH_RET(fih_rc);
