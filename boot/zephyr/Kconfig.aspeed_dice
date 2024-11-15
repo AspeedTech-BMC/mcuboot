@@ -1,11 +1,28 @@
+config ASPEED_DICE_CERT_USE_UTC
+	default n
+	bool "Use UTC time format"
+	help
+	  Enable if certificate time format is UTC
 
 config ASPEED_DICE_CERT_VALID_FROM
+	default "20221010000000Z"
+	string "Aspeed DICE certificate validity, format : YYYYMMDDhhmmssZ"
+	help
+	  Certificate not valid before this date.
+
+config ASPEED_DICE_CERT_VALID_TO
+	default "20421010000000Z"
+	string "Aspeed DICE certificate validity, format : YYYYMMDDhhmmssZ"
+	help
+	  Certificate not valid after this date.
+
+config ASPEED_DICE_CERT_VALID_FROM_UTC
 	default "221010000000Z"
 	string "Aspeed DICE certificate validity, format : YYMMDDhhmmssZ"
 	help
 	  Certificate not valid before this date.
 
-config ASPEED_DICE_CERT_VALID_TO
+config ASPEED_DICE_CERT_VALID_TO_UTC
 	default "421010000000Z"
 	string "Aspeed DICE certificate validity, format : YYMMDDhhmmssZ"
 	help

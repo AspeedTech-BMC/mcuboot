@@ -1,3 +1,13 @@
+/*
+ *  Copyright (c) Microsoft Corporation. All rights reserved.
+ *  Licensed under the MIT License.
+ */
+/*
+ * Copyright (c) 2024 ASPEED Technology Inc.
+ *
+ * SPDX-License-Identifier: MIT
+ */
+
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
 #include <zephyr/drivers/flash.h>
@@ -440,6 +450,29 @@ error:
 	return -1;
 }
 
+// #define CERT_VALID_FROM “20240101000000Z” // YYYYMMDDHH[MM[SS]] 2024/1/1 00:00:00
+// #define CERT_VALID_TO   “20540101000000Z” // 2054/1/1 00:00:00
+// x509_add_generalized_time(ctx, CERT_VALID_FROM);
+// x509_add_generalized_time(ctx, CERT_VALID_TO);
+int x509_add_generalized_time(PFR_DER_CTX *ctx, uint8_t *str)
+{
+	uint32_t i, num_char = (uint32_t)strlen(str);
+
+	ASRT(num_char == 15);
+	CHECK_SPACE(ctx);
+
+	ctx->buffer[ctx->position++] = 0x18;
+	ctx->buffer[ctx->position++] = (uint8_t)num_char;
+
+	for (i = 0; i < num_char; i++) {
+		ctx->buffer[ctx->position++] = str[i];
+	}
+
+	return 0;
+error:
+	return -1;
+}
+
 int x509_add_utc_time(PFR_DER_CTX *ctx, uint8_t *str)
 {
 	uint32_t i, num_char = (uint32_t)strlen(str);
@@ -664,8 +697,13 @@ int x509_get_alias_cert_tbs(PFR_DER_CTX *ctx, uint8_t *serial_num,
 			CONFIG_ASPEED_DICE_CERT_ALIAS_ISSUER_ORG,
 			CONFIG_ASPEED_DICE_CERT_ALIAS_ISSUER_COUNTRY));
 	CHK(x509_start_seq_or_set(ctx, true));
-	CHK(x509_add_utc_time(ctx, CONFIG_ASPEED_DICE_CERT_VALID_FROM));
-	CHK(x509_add_utc_time(ctx, CONFIG_ASPEED_DICE_CERT_VALID_TO));
+#if defined(CONFIG_ASPEED_DICE_CERT_USE_UTC)
+	CHK(x509_add_utc_time(ctx, CONFIG_ASPEED_DICE_CERT_VALID_FROM_UTC));
+	CHK(x509_add_utc_time(ctx, CONFIG_ASPEED_DICE_CERT_VALID_TO_UTC));
+#else
+	CHK(x509_add_generalized_time(ctx, CONFIG_ASPEED_DICE_CERT_VALID_FROM));
+	CHK(x509_add_generalized_time(ctx, CONFIG_ASPEED_DICE_CERT_VALID_TO));
+#endif
 	CHK(x509_pop_nesting(ctx));
 
 	CHK(x509_add_x501_name(ctx, CONFIG_ASPEED_DICE_CERT_ALIAS_SUBJECT_NAME,
@@ -704,8 +742,13 @@ int x509_get_device_cert_tbs(PFR_DER_CTX *ctx, uint8_t *serial_num)
 			CONFIG_ASPEED_DICE_CERT_ALIAS_ISSUER_COUNTRY));
 
 	CHK(x509_start_seq_or_set(ctx, true));
-	CHK(x509_add_utc_time(ctx, CONFIG_ASPEED_DICE_CERT_VALID_FROM));
-	CHK(x509_add_utc_time(ctx, CONFIG_ASPEED_DICE_CERT_VALID_TO));
+#if defined(CONFIG_ASPEED_DICE_CERT_USE_UTC)
+	CHK(x509_add_utc_time(ctx, CONFIG_ASPEED_DICE_CERT_VALID_FROM_UTC));
+	CHK(x509_add_utc_time(ctx, CONFIG_ASPEED_DICE_CERT_VALID_TO_UTC));
+#else
+	CHK(x509_add_generalized_time(ctx, CONFIG_ASPEED_DICE_CERT_VALID_FROM));
+	CHK(x509_add_generalized_time(ctx, CONFIG_ASPEED_DICE_CERT_VALID_TO));
+#endif
 	CHK(x509_pop_nesting(ctx));
 
 	CHK(x509_add_x501_name(ctx, CONFIG_ASPEED_DICE_CERT_DEVID_SUBJECT_NAME,
