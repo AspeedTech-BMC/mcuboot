@@ -17,7 +17,7 @@
 #include <zephyr/crypto/hash.h>
 #include <zephyr/crypto/crypto.h>
 
-#define HASH_DRV_NAME CONFIG_CRYPTO_ASPEED_HASH_DRV_NAME
+#define HASH_DRV_NAME DEVICE_DT_NAME(DT_INST(0, aspeed_hace))
 
 #if defined(MBEDTLS_SHA1_ALT) || defined(MBEDTLS_SHA256_ALT) || defined(MBEDTLS_SHA512_ALT)
 void sha_init(mbedtls_sha_context *ctx)

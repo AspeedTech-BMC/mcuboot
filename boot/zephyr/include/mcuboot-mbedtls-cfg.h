@@ -47,6 +47,7 @@
 #define MBEDTLS_SHA512_C
 #define MBEDTLS_SHA384_C
 #define MBEDTLS_PK_C
+#define MBEDTLS_PK_PARSE_C
 #define MBEDTLS_BASE64_C
 #define MBEDTLS_SHA1_C
 

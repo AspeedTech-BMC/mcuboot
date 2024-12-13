@@ -594,6 +594,8 @@ int main(void)
 #else
     BOOT_LOG_INF("Bootloader chainload address offset: 0x%x",
                  rsp.br_image_off);
+#endif
+
 #if defined(CONFIG_SOC_AST1060)
     if (is_secureboot_en()) {
         BOOT_LOG_INF("Secure boot is enabled");
