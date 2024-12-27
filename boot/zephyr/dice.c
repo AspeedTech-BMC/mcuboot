@@ -1065,6 +1065,9 @@ int dice_start(size_t cert_type, struct boot_rsp *rsp)
 	const struct flash_area *fap;
 	cert_status rc;
 
+#if defined(CONFIG_OTP_SIM)
+	memset((uint8_t *)CDI_ADDRESS, 0, CDI_LENGTH);
+#endif
 	// Hash CDI
 	mbedtls_sha512((uint8_t *)CDI_ADDRESS, CDI_LENGTH, cdi_digest, 1 /* SHA-384 */);
 	// LOG_HEXDUMP_INF((uint8_t *)CDI_ADDRESS, CDI_LENGTH, "CDI :");
