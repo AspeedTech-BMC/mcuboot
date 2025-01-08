@@ -55,7 +55,7 @@ MCUBOOT_LOG_MODULE_REGISTER(dice);
 #define DER_MAX_TBS                       0x500
 #define DER_MAX_NESTED                    0x10
 
-#define RIOT_X509_KEY_USAGE               0x04    // keyCertSign
+#define RIOT_X509_KEY_USAGE               KEY_USAGE_KEYCERTSIGN
 #define RIOT_X509_SNUM_LEN                0x08    // In bytes
 
 #define CERT_INFO_MAGIC_NUM               0x43455254    // hex of 'CERT'
@@ -131,6 +131,7 @@ static int oid_ext_key_usage[] = { 2,5,29,37,-1 };
 static int oid_client_auth[] = { 1,3,6,1,5,5,7,3,2,-1 };
 static int oid_auth_key_identifier[] = { 2,5,29,35,-1 };
 static int oid_basic_constraints[] = { 2,5,29,19,-1 };
+static int oid_extention_req[] = { 1, 2, 840, 113549, 1, 9, 14, -1 };
 
 static mbedtls_hmac_drbg_context hmac_drbg_ctx = {0};
 static uint8_t cdi_digest[SHA384_HASH_LENGTH] = {0};
@@ -621,7 +622,7 @@ int x509_add_extentions(PFR_DER_CTX *ctx, uint8_t *devid_pub_key, uint32_t devid
 		uint8_t *dev_fwid, uint32_t fwid_len)
 {
 	uint8_t auth_key_identifier[SHA1_HASH_LENGTH];
-	uint8_t key_usage = RIOT_X509_KEY_USAGE;
+	uint8_t key_usage = KEY_USAGE_DIGITALSIGNATURE | KEY_USAGE_NONREPUDIATION | KEY_USAGE_KEYENCIPHERMENT;
 	uint8_t ext_len = 1;
 
 
@@ -692,10 +693,13 @@ int x509_get_alias_cert_tbs(PFR_DER_CTX *ctx, uint8_t *serial_num,
 	CHK(x509_start_seq_or_set(ctx, true));
 	CHK(x509_add_oid(ctx, oid_ecdsa_with_sha384));
 	CHK(x509_pop_nesting(ctx));
-
-	CHK(x509_add_x501_name(ctx, CONFIG_ASPEED_DICE_CERT_ALIAS_ISSUER_NAME,
-			CONFIG_ASPEED_DICE_CERT_ALIAS_ISSUER_ORG,
-			CONFIG_ASPEED_DICE_CERT_ALIAS_ISSUER_COUNTRY));
+	/*
+	 * Alias cert will be signed by DevID cert, to assign DevID cert subject
+	 * name as the issuer name in Alias cert
+	 */
+	CHK(x509_add_x501_name(ctx, CONFIG_ASPEED_DICE_CERT_DEVID_SUBJECT_NAME,
+			CONFIG_ASPEED_DICE_CERT_DEVID_SUBJECT_ORG,
+			CONFIG_ASPEED_DICE_CERT_DEVID_SUBJECT_COUNTRY));
 	CHK(x509_start_seq_or_set(ctx, true));
 #if defined(CONFIG_ASPEED_DICE_CERT_USE_UTC)
 	CHK(x509_add_utc_time(ctx, CONFIG_ASPEED_DICE_CERT_VALID_FROM_UTC));
@@ -796,22 +800,62 @@ error:
 
 int x509_get_csr_tbs(PFR_DER_CTX *ctx)
 {
-	CHK(x509_start_seq_or_set(ctx, true));
-	CHK(x509_add_int(ctx, 0));
-	CHK(x509_add_x501_name(ctx, CONFIG_ASPEED_DICE_CERT_ALIAS_ISSUER_NAME,
-			CONFIG_ASPEED_DICE_CERT_ALIAS_ISSUER_ORG,
-			CONFIG_ASPEED_DICE_CERT_ALIAS_ISSUER_COUNTRY));
+	uint8_t key_usage = RIOT_X509_KEY_USAGE;
 
+	// CSR TBS start
 	CHK(x509_start_seq_or_set(ctx, true));
-	CHK(x509_start_seq_or_set(ctx, true));
-	CHK(x509_add_oid(ctx, oid_ec_pubkey));
-	CHK(x509_add_oid(ctx, oid_curve_ecdsa384));
-	CHK(x509_pop_nesting(ctx));
-	CHK(x509_add_bit_str(ctx, devid_pub_key_buf, ECDSA384_PUBLIC_KEY_SIZE));
-	CHK(x509_pop_nesting(ctx));
-	CHK(x509_start_explicit(ctx, 0));
-	CHK(x509_pop_nesting(ctx));
-	CHK(x509_pop_nesting(ctx));
+
+		CHK(x509_add_int(ctx, 0));
+		CHK(x509_add_x501_name(ctx, CONFIG_ASPEED_DICE_CERT_DEVID_SUBJECT_NAME,
+				CONFIG_ASPEED_DICE_CERT_DEVID_SUBJECT_ORG,
+				CONFIG_ASPEED_DICE_CERT_DEVID_SUBJECT_COUNTRY));
+
+		CHK(x509_start_seq_or_set(ctx, true));
+
+			CHK(x509_start_seq_or_set(ctx, true));
+				CHK(x509_add_oid(ctx, oid_ec_pubkey));
+				CHK(x509_add_oid(ctx, oid_curve_ecdsa384));
+			CHK(x509_pop_nesting(ctx));
+
+			CHK(x509_add_bit_str(ctx, devid_pub_key_buf, ECDSA384_PUBLIC_KEY_SIZE));
+		CHK(x509_pop_nesting(ctx));
+
+		// [0]
+		CHK(x509_start_explicit(ctx, 0));
+			CHK(x509_start_seq_or_set(ctx, true));
+				// Request extentions OID
+				CHK(x509_add_oid(ctx, oid_extention_req));
+				CHK(x509_start_seq_or_set(ctx, false)); // set
+					CHK(x509_start_seq_or_set(ctx, true)); // ext_req sequence
+									       //
+						// key_usage
+						CHK(x509_start_seq_or_set(ctx, true));
+							CHK(x509_add_oid(ctx, oid_key_usage));
+							CHK(x509_envelop_oct_str(ctx));
+								CHK(x509_add_bit_str(ctx, &key_usage, 1));
+							CHK(x509_pop_nesting(ctx));
+						CHK(x509_pop_nesting(ctx));
+
+						// basic_constraints
+						CHK(x509_start_seq_or_set(ctx, true));
+							CHK(x509_add_oid(ctx, oid_basic_constraints));
+							// critical
+							CHK(x509_add_bool(ctx, true));
+							CHK(x509_envelop_oct_str(ctx));
+									CHK(x509_start_seq_or_set(ctx, true));
+										// cA: true
+										CHK(x509_add_bool(ctx, true));
+										CHK(x509_add_int(ctx, 1));
+									CHK(x509_pop_nesting(ctx));
+							CHK(x509_pop_nesting(ctx)); // end of ocetet str
+						CHK(x509_pop_nesting(ctx));  // end of basic_constraints
+									     //
+					CHK(x509_pop_nesting(ctx));  // end of ext_req sequence
+				CHK(x509_pop_nesting(ctx));  // end of set
+			CHK(x509_pop_nesting(ctx)); // end of extentions
+		CHK(x509_pop_nesting(ctx)); // end explicit [0]
+
+	CHK(x509_pop_nesting(ctx)); // end of CSR TBS
 
 	ASRT(ctx->collection_position == 0);
 
