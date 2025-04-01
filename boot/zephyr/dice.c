@@ -433,15 +433,15 @@ int x509_add_x501_name(PFR_DER_CTX *ctx, uint8_t *common, uint8_t *org, uint8_t 
 
 	CHK(x509_start_seq_or_set(ctx, false));
 	CHK(x509_start_seq_or_set(ctx, true));
-	CHK(x509_add_oid(ctx, oid_country_name));
-	CHK(x509_add_utf8_str(ctx, country));
+	CHK(x509_add_oid(ctx, oid_org_name));
+	CHK(x509_add_utf8_str(ctx, org));
 	CHK(x509_pop_nesting(ctx));
 	CHK(x509_pop_nesting(ctx));
 
 	CHK(x509_start_seq_or_set(ctx, false));
 	CHK(x509_start_seq_or_set(ctx, true));
-	CHK(x509_add_oid(ctx, oid_org_name));
-	CHK(x509_add_utf8_str(ctx, org));
+	CHK(x509_add_oid(ctx, oid_country_name));
+	CHK(x509_add_utf8_str(ctx, country));
 	CHK(x509_pop_nesting(ctx));
 	CHK(x509_pop_nesting(ctx));
 	CHK(x509_pop_nesting(ctx));
