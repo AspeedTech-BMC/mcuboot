@@ -1,3 +1,10 @@
+config ASPEED_DICE
+	default n
+	bool "Enable ASPEED DICE support"
+	help
+	  Enable ASPEED DICE (Device Identifier Composition Engine) support
+	  for secure boot and attestation.
+
 config ASPEED_DICE_CERT_USE_UTC
 	default n
 	bool "Use UTC time format"
