@@ -670,7 +670,6 @@ int x509_add_extentions(PFR_DER_CTX *ctx, uint8_t *devid_pub_key, uint32_t devid
 	CHK(x509_start_seq_or_set(ctx, true));
 	// cA = false
 	CHK(x509_add_bool(ctx, false));
-	CHK(x509_add_int(ctx, 1));
 	CHK(x509_pop_nesting(ctx));
 	CHK(x509_pop_nesting(ctx));
 	CHK(x509_pop_nesting(ctx));
